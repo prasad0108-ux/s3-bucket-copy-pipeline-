@@ -1,38 +1,60 @@
 #!/bin/bash
 set -e
 
-SOURCE_BUCKET=$1
-DEST_BUCKET=$2
-DRY_RUN=$3
-REGION=af-south-1
+RAW_SOURCE=$1
+RAW_DEST=$2
+SRC_REGION=$3
+DEST_REGION=$4
+DRY_RUN=$5
 
-if [[ -z "$SOURCE_BUCKET" || -z "$DEST_BUCKET" ]]; then
-  echo "❌ Usage: s3_copy.sh <source-bucket> <destination-bucket> <dry-run:true|false>"
-  exit 1
-fi
+# -------- FUNCTION: Normalize bucket input --------
+normalize_bucket() {
+  local input=$1
 
+  # If ARN → extract bucket name
+  if [[ "$input" == arn:aws:s3:::* ]]; then
+    echo "${input##arn:aws:s3:::}"
+  else
+    echo "$input"
+  fi
+}
+
+SOURCE_BUCKET=$(normalize_bucket "$RAW_SOURCE")
+DEST_BUCKET=$(normalize_bucket "$RAW_DEST")
+
+echo "🔎 Normalized Source Bucket: $SOURCE_BUCKET"
+echo "🔎 Normalized Destination Bucket: $DEST_BUCKET"
+
+# -------- Validation --------
 echo "🔐 AWS Identity"
 aws sts get-caller-identity
 
-echo "📦 Source bucket: $SOURCE_BUCKET"
-echo "📦 Destination bucket: $DEST_BUCKET"
-echo "🧪 Dry run: $DRY_RUN"
+echo "📦 Validating source bucket"
+aws s3api head-bucket --bucket "$SOURCE_BUCKET" --region "$SRC_REGION"
 
-aws s3 ls s3://$SOURCE_BUCKET
-aws s3 ls s3://$DEST_BUCKET
+echo "📦 Validating destination bucket"
+aws s3api head-bucket --bucket "$DEST_BUCKET" --region "$DEST_REGION"
 
+# -------- Dry Run --------
 if [ "$DRY_RUN" = "true" ]; then
-  echo "🧪 DRY RUN: Listing objects only"
-  aws s3 ls s3://$SOURCE_BUCKET --recursive
+  echo "🧪 DRY RUN MODE ENABLED"
+  aws s3 ls s3://$SOURCE_BUCKET --recursive --region "$SRC_REGION"
   echo "✅ Dry run completed successfully"
   exit 0
 fi
 
-echo "🚀 Copying data..."
-aws s3 sync s3://$SOURCE_BUCKET s3://$DEST_BUCKET --only-show-errors
+# -------- Copy --------
+echo "🚀 Starting cross-region copy"
+aws s3 sync \
+  s3://$SOURCE_BUCKET \
+  s3://$DEST_BUCKET \
+  --source-region "$SRC_REGION" \
+  --region "$DEST_REGION" \
+  --only-show-errors
 
-SRC_COUNT=$(aws s3 ls s3://$SOURCE_BUCKET --recursive | wc -l)
-DEST_COUNT=$(aws s3 ls s3://$DEST_BUCKET --recursive | wc -l)
+# -------- Validation --------
+SRC_COUNT=$(aws s3 ls s3://$SOURCE_BUCKET --recursive --region "$SRC_REGION" | wc -l)
+DEST_COUNT=$(aws s3 ls s3://$DEST_BUCKET --recursive --region "$DEST_REGION" | wc -l)
 
 echo "Source objects: $SRC_COUNT"
 echo "Destination objects: $DEST_COUNT"
