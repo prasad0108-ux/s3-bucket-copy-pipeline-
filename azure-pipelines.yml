@@ -1,13 +1,23 @@
-trigger: none   # 🔴 REQUIRED for runtime popup
+trigger: none
 
 parameters:
 - name: sourceBucket
-  displayName: "Source S3 Bucket"
+  displayName: "Source Bucket (Name or ARN)"
   type: string
 
-- name: destinationBucket
-  displayName: "Destination S3 Bucket"
+- name: sourceRegion
+  displayName: "Source Bucket Region"
   type: string
+  default: us-east-1
+
+- name: destinationBucket
+  displayName: "Destination Bucket (Name or ARN)"
+  type: string
+
+- name: destinationRegion
+  displayName: "Destination Bucket Region"
+  type: string
+  default: af-south-1
 
 - name: dryRun
   displayName: "Dry Run (true = no copy)"
@@ -21,14 +31,16 @@ steps:
 - checkout: self
 
 - task: AWSShellScript@1
-  displayName: "S3 Bucket-to-Bucket Copy"
+  displayName: "Cross-Region S3 Copy (Name or ARN)"
   inputs:
     awsCredentials: aws-s3-copy-connection
-    regionName: af-south-1
+    regionName: ${{ parameters.destinationRegion }}
     scriptType: inline
     inlineScript: |
       chmod +x scripts/s3_copy.sh
       ./scripts/s3_copy.sh \
         "${{ parameters.sourceBucket }}" \
         "${{ parameters.destinationBucket }}" \
+        "${{ parameters.sourceRegion }}" \
+        "${{ parameters.destinationRegion }}" \
         "${{ parameters.dryRun }}"
